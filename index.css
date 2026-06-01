@@ -1,16 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
-
-*{
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-img{
-    max-width: 100%;
-    display: block;
-}
-
 body{
     margin: 0;
     background-color: #000;
@@ -57,8 +45,8 @@ header a{
 .carousel .list .item .content{
     position: absolute;
     top: 20%;
-    width: 90%;
-    max-width: 1140px;
+    width: 1140px;
+    max-width: 80%;
     left: 50%;
     transform: translateX(-50%);
     padding-right: 30%;
@@ -72,7 +60,7 @@ header a{
 }
 .carousel .list .item .title,
 .carousel .list .item .topic{
-    font-size: clamp(2rem, 5vw, 5em);
+    font-size: 5em;
     font-weight: bold;
     line-height: 1.3em;
 }
@@ -310,116 +298,11 @@ header a{
         opacity: 0;
     }
 }
-@media screen and (max-width: 768px){
-
-    header{
-        max-width: 95%;
-        padding: 0 10px;
-    }
-
-    header a{
-        margin-right: 15px;
-        font-size: 14px;
-    }
-
+@media screen and (max-width: 678px) {
     .carousel .list .item .content{
-        width: 90%;
         padding-right: 0;
-        top: 15%;
     }
-
-    .carousel .list .item .author{
-        letter-spacing: 4px;
-        font-size: 12px;
-    }
-
-    .carousel .list .item .title,
-    .carousel .list .item .topic{
-        font-size: 2rem;
-        line-height: 1.2;
-    }
-
-    .carousel .list .item .des h3{
-        font-size: 13px;
-        line-height: 1.5;
-    }
-
-    .carousel .list .item .buttons{
-        grid-template-columns: repeat(2, 100px);
-        grid-template-rows: 35px;
-    }
-
-    .carousel .list .item .buttons button{
-        font-size: 10px;
-        letter-spacing: 1px;
-    }
-
-    .thumbnail{
-        gap: 10px;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-    }
-
-    .thumbnail .item{
-        width: 90px;
-        height: 130px;
-    }
-
-    .thumbnail .item .content .title{
-        font-size: 10px;
-    }
-
-    .thumbnail .item .content .description{
-        font-size: 9px;
-    }
-
-    .arrows{
-        bottom: 20px;
-        left: 20px;
-        top: auto;
-        right: auto;
-        width: auto;
-        max-width: none;
-    }
-
-    .arrows button{
-        width: 35px;
-        height: 35px;
-    }
-}
-
-@media screen and (max-width: 480px){
-
-    .carousel .list .item .content{
-        top: 12%;
-    }
-
-    .carousel .list .item .title,
-    .carousel .list .item .topic{
-        font-size: 1.5rem;
-    }
-
-    .carousel .list .item .des h3{
-        font-size: 11px;
-    }
-
-    .thumbnail{
-        bottom: 70px;
-    }
-
-    .thumbnail .item{
-        width: 70px;
-        height: 100px;
-    }
-
-    .arrows{
-        bottom: 15px;
-        left: 15px;
-    }
-
-    .arrows button{
-        width: 30px;
-        height: 30px;
+    .carousel .list .item .content .title{
+        font-size: 30px;
     }
 }
