@@ -1,0 +1,43 @@
+name: HD static deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy website to IIS
+        shell: powershell
+        run: |
+          $source = "$env:GITHUB_WORKSPACE"
+          $destination = "C:\inetpub\wwwroot\HD"
+
+          Write-Host "Source: $source"
+          Write-Host "Destination: $destination"
+
+          Get-ChildItem $source -Force |
+            Where-Object { $_.Name -notin @(".git", ".github") } |
+            Copy-Item -Destination $destination -Recurse -Force
+
+      - name: Verify deployment
+        shell: powershell
+        run: |
+          Write-Host "Checking deployed files..."
+          Get-ChildItem "C:\inetpub\wwwroot\HD"
+
+          Write-Host "Testing IIS..."
+          $response = Invoke-WebRequest "http://localhost/" -UseBasicParsing
+
+          if ($response.StatusCode -eq 200) {
+              Write-Host "IIS website is responding successfully."
+          }
+          else {
+              throw "IIS returned HTTP status $($response.StatusCode)"
+          }
