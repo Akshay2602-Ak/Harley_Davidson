@@ -1,1 +1,67 @@
 
+name: Upload Website Artifact to S3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  upload-artifact:
+    name: Package and Upload Website
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate website files
+        shell: bash
+        run: |
+          if [ ! -f index.html ]; then
+            echo "ERROR: index.html was not found."
+            exit 1
+          fi
+
+          echo "Website entry file found."
+          ls -la
+
+      - name: Package website
+        shell: bash
+        run: |
+          zip -r website.zip . \
+            -x ".git/*" \
+               ".github/*" \
+               "node_modules/*" \
+               "website.zip"
+
+          echo "Artifact created:"
+          ls -lh website.zip
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::288761746621:role/Github_oidc
+          aws-region: ap-south-1
+
+      - name: Verify AWS identity
+        shell: bash
+        run: |
+          aws sts get-caller-identity
+
+      - name: Upload versioned artifact to S3
+        shell: bash
+        run: |
+          aws s3 cp website.zip \
+            "s3://dotnet-windows-s3/artifacts/${GITHUB_SHA}.zip"
+
+      - name: Verify uploaded artifact
+        shell: bash
+        run: |
+          aws s3api head-object \
+            --bucket dotnet-windows-s3 \
+            --key "artifacts/${GITHUB_SHA}.zip"
+
+          echo "S3 artifact verification completed."
