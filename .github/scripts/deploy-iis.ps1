@@ -8,147 +8,126 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Bucket = 'dotnet-windows-s3'
-$ArtifactKey = "artifacts/$ReleaseId.zip"
 $LivePath = 'C:\inetpub\wwwroot\HD'
 $DeployRoot = 'C:\Deploy'
-$StagingRoot = Join-Path $DeployRoot 'staging'
-$ReleasePath = Join-Path (Join-Path $DeployRoot 'releases') $ReleaseId
+$StagePath = Join-Path $DeployRoot "staging\$ReleaseId"
+$ReleasePath = Join-Path $DeployRoot "releases\$ReleaseId"
 $BackupRoot = 'C:\inetpub\backups\HD'
-$Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$BackupPath = Join-Path $BackupRoot "release-$Timestamp"
-$ZipPath = Join-Path $StagingRoot "$ReleaseId.zip"
-$ExtractPath = Join-Path $StagingRoot "extract-$ReleaseId"
+$BackupPath = Join-Path $BackupRoot "release-$(Get-Date -Format yyyyMMdd-HHmmss)"
+$ZipPath = Join-Path $DeployRoot "$ReleaseId.zip"
 
 function Test-Website {
     try {
-        $response = Invoke-WebRequest `
-            -Uri 'http://localhost/' `
-            -UseBasicParsing `
-            -TimeoutSec 15
-
-        return ($response.StatusCode -eq 200)
-    }
-    catch {
+        $r = Invoke-WebRequest -Uri 'http://localhost/' `
+            -UseBasicParsing -TimeoutSec 15
+        return ($r.StatusCode -eq 200)
+    } catch {
         Write-Output "Health check failed: $($_.Exception.Message)"
         return $false
     }
 }
 
-# Preflight checks: no live website changes in this section.
-if (-not (Test-Path $LivePath -PathType Container)) {
-    throw "Live website directory not found: $LivePath"
+if (-not (Test-Path "$LivePath\index.html")) {
+    throw "Live site entry file is missing: $LivePath"
 }
 if (Test-Path $ReleasePath) {
-    throw "Release directory already exists; refusing to overwrite: $ReleasePath"
+    throw "Release already exists; refusing to overwrite it: $ReleasePath"
 }
 if (-not (Get-Module -ListAvailable -Name AWSPowerShell)) {
-    throw 'AWSPowerShell module is not installed.'
+    throw 'AWSPowerShell is not installed.'
 }
+if ((Get-PSDrive C).Free -lt 1GB) {
+    throw 'Less than 1 GB free on C:. Deployment aborted.'
+}
+if (-not (Test-Website)) {
+    throw 'Current live website is unhealthy; deployment aborted.'
+}
+
+Import-Module AWSPowerShell
 
 $null = New-Item -ItemType Directory -Force -Path `
-    $StagingRoot, (Join-Path $DeployRoot 'releases'), $BackupRoot
+    $StagePath, (Split-Path $ReleasePath), $BackupRoot
 
-if ((Get-PSDrive C).Free -lt 1GB) {
-    throw 'Less than 1 GB free on C:. Aborting deployment.'
+# Download the exact artifact for this release.
+Read-S3Object -BucketName $Bucket `
+    -Key "artifacts/$ReleaseId.zip" -File $ZipPath
+
+if (-not (Test-Path $ZipPath) -or (Get-Item $ZipPath).Length -eq 0) {
+    throw 'Artifact download failed or produced an empty ZIP.'
 }
 
-# Download the exact versioned artifact.
-Import-Module AWSPowerShell
-Read-S3Object -BucketName $Bucket -Key $ArtifactKey -File $ZipPath
-
-if (-not (Test-Path $ZipPath -PathType Leaf)) {
-    throw 'Artifact download did not produce a ZIP file.'
-}
-if ((Get-Item $ZipPath).Length -le 0) {
-    throw 'Downloaded ZIP is empty.'
-}
-
-# Validate the ZIP and extract to a separate, non-live directory.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
 try {
     $entries = @($archive.Entries)
     if ($entries.Count -eq 0) {
-        throw 'Artifact ZIP contains no entries.'
+        throw 'Artifact ZIP is empty.'
     }
     if ($entries | Where-Object {
         $_.FullName -match '(^/|^[A-Za-z]:|(^|/)\.\.(/|$)|\\)'
     }) {
-        throw 'Artifact contains an unsafe path.'
+        throw 'Unsafe path found in artifact ZIP.'
     }
-    if (-not ($entries | Where-Object {
-        $_.FullName -eq 'index.html'
-    })) {
-        throw 'Artifact does not contain index.html at its root.'
+    if (-not ($entries | Where-Object { $_.FullName -ceq 'index.html' })) {
+        throw 'index.html is missing from the ZIP root.'
     }
-}
-finally {
+} finally {
     $archive.Dispose()
 }
 
-if (Test-Path $ExtractPath) {
-    Remove-Item $ExtractPath -Recurse -Force
-}
-$null = New-Item -ItemType Directory -Path $ExtractPath
-[System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $ExtractPath)
+[System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $StagePath)
 
-if (-not (Test-Path (Join-Path $ExtractPath 'index.html') -PathType Leaf)) {
-    throw 'Extracted website entry file is missing.'
+if (-not (Test-Path "$StagePath\index.html")) {
+    throw 'Extracted website is missing index.html.'
 }
 
-# Confirm current live site is healthy before backing it up.
-if (-not (Test-Website)) {
-    throw 'Current live website is unhealthy. Refusing deployment.'
-}
-
-# Back up the current site. Do not delete the original.
+# Back up the live files and verify the backup before deployment.
 $null = New-Item -ItemType Directory -Path $BackupPath
 & robocopy $LivePath $BackupPath /E /COPY:DATS /DCOPY:DAT /R:2 /W:2 /XJ
 if ($LASTEXITCODE -ge 8) {
-    throw "Backup failed with robocopy exit code $LASTEXITCODE."
+    throw "Backup failed (robocopy exit code $LASTEXITCODE)."
 }
 
-# Prepare release with the existing live-site ACLs.
+$liveCount = @(Get-ChildItem $LivePath -File -Recurse).Count
+$backupCount = @(Get-ChildItem $BackupPath -File -Recurse).Count
+if ($liveCount -ne $backupCount -or -not (Test-Path "$BackupPath\index.html")) {
+    throw "Backup verification failed. Live files=$liveCount; backup files=$backupCount"
+}
+
+# Prepare the release without copying staging ACLs to the live site.
 $null = New-Item -ItemType Directory -Path $ReleasePath
-& robocopy $ExtractPath $ReleasePath /E /COPY:DATS /DCOPY:DAT /R:2 /W:2 /XJ
+& robocopy $StagePath $ReleasePath /E /COPY:DAT /DCOPY:DAT /R:2 /W:2 /XJ
 if ($LASTEXITCODE -ge 8) {
-    throw "Release copy failed with robocopy exit code $LASTEXITCODE."
+    throw "Release preparation failed (robocopy exit code $LASTEXITCODE)."
 }
 
-# Deployment changes the live files. Preserve the backup for rollback.
 try {
-    & robocopy $ReleasePath $LivePath /E /COPY:DATS /DCOPY:DAT /R:2 /W:2 /XJ
+    # /MIR removes stale destination files, so it is used only after backup verification.
+    & robocopy $ReleasePath $LivePath /MIR /COPY:DAT /DCOPY:DAT /R:2 /W:2 /XJ
     if ($LASTEXITCODE -ge 8) {
-        throw "Live deployment copy failed with robocopy exit code $LASTEXITCODE."
-    }
-
-    # Remove stale files from the live directory only after copying.
-    & robocopy $ReleasePath $LivePath /MIR /COPY:DATS /DCOPY:DAT /R:2 /W:2 /XJ
-    if ($LASTEXITCODE -ge 8) {
-        throw "Live sync failed with robocopy exit code $LASTEXITCODE."
+        throw "Live copy failed (robocopy exit code $LASTEXITCODE)."
     }
 
     if (-not (Test-Website)) {
         throw 'Post-deployment HTTP health check failed.'
     }
 
-    Write-Output "Deployment succeeded. Release: $ReleaseId"
-    Write-Output "Backup retained at: $BackupPath"
-}
-catch {
-    $deployError = $_.Exception.Message
-    Write-Output "Deployment failed: $deployError"
-    Write-Output 'Attempting rollback from backup...'
+    Write-Output "Deployment succeeded: $ReleaseId"
+    Write-Output "Backup retained: $BackupPath"
+} catch {
+    $deploymentError = $_.Exception.Message
+    Write-Output "Deployment failed: $deploymentError"
+    Write-Output 'Attempting rollback from the verified backup.'
 
-    & robocopy $BackupPath $LivePath /MIR /COPY:DATS /DCOPY:DAT /R:2 /W:2 /XJ
+    & robocopy $BackupPath $LivePath /MIR /COPY:DAT /DCOPY:DAT /R:2 /W:2 /XJ
     $rollbackCode = $LASTEXITCODE
 
     if ($rollbackCode -ge 8) {
-        throw "Deployment failed AND rollback copy failed (robocopy $rollbackCode). Backup: $BackupPath"
+        throw "Rollback copy failed (robocopy $rollbackCode). Preserve backup: $BackupPath"
     }
     if (-not (Test-Website)) {
-        throw "Rollback copied files, but HTTP health check still fails. Backup: $BackupPath"
+        throw "Rollback copied files but health check failed. Preserve backup: $BackupPath"
     }
 
-    throw "Deployment failed; rollback restored a healthy website. Original error: $deployError"
+    throw "Deployment failed; rollback restored a healthy site. Cause: $deploymentError"
 }
