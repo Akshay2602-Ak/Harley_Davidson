@@ -74,7 +74,8 @@ jobs:
             --key "artifacts/deploy-iis-${GITHUB_SHA}.ps1"
 
      
-      - name: SSM deployment integration
+     
+      - name: Deploy website through SSM
         shell: bash
         env:
           INSTANCE_ID: i-0fc07c9aecbbf18a2
@@ -87,19 +88,19 @@ jobs:
           release_id = os.environ["RELEASE_ID"]
 
           commands = [
+              "$ErrorActionPreference = 'Stop'",
               "Import-Module AWSPowerShell",
-              "Write-Output 'Deployment integration preflight only'",
-              f"Write-Output 'Release ID: {release_id}'",
-              "Write-Output ('Computer: ' + $env:COMPUTERNAME)",
-              r"if (-not (Test-Path 'C:\inetpub\wwwroot\HD\index.html')) { throw 'Live IIS entry file missing' }",
-              "if ((Get-PSDrive C).Free -lt 1GB) { throw 'Insufficient free disk space' }",
-              "Write-Output 'Preflight passed. No live files changed.'"
+              "$null = New-Item -ItemType Directory -Force -Path 'C:\\Deploy\\staging'",
+              f"$scriptPath = 'C:\\Deploy\\staging\\deploy-iis-{release_id}.ps1'",
+              f"Read-S3Object -BucketName 'dotnet-windows-s3' -Key 'artifacts/deploy-iis-{release_id}.ps1' -File $scriptPath",
+              f"& $scriptPath -ReleaseId '{release_id}'",
+              "if ($LASTEXITCODE -and $LASTEXITCODE -ge 8) { throw 'Deployment command failed' }"
           ]
 
           with open("ssm-commands.json", "w", encoding="utf-8") as f:
               json.dump({"commands": commands}, f)
 
-          print("SSM parameters JSON created successfully.")
+          print("SSM deployment command JSON generated.")
           PY
 
           python3 -m json.tool ssm-commands.json
@@ -108,7 +109,7 @@ jobs:
             --document-name "AWS-RunPowerShellScript" \
             --instance-ids "$INSTANCE_ID" \
             --parameters file://ssm-commands.json \
-            --comment "IIS deployment preflight" \
+            --comment "Controlled IIS deployment for ${RELEASE_ID}" \
             --query "Command.CommandId" \
             --output text)
 
@@ -138,6 +139,6 @@ jobs:
             --output json || true
 
           if [ "$STATUS" != "Success" ]; then
-            echo "Preflight failed: ${STATUS:-Unknown}"
+            echo "Deployment did not succeed: ${STATUS:-Unknown}"
             exit 1
           fi
