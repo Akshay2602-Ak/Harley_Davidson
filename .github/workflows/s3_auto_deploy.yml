@@ -73,25 +73,36 @@ jobs:
             --bucket dotnet-windows-s3 \
             --key "artifacts/deploy-iis-${GITHUB_SHA}.ps1"
 
+     
       - name: SSM deployment integration
         shell: bash
         env:
           INSTANCE_ID: i-0fc07c9aecbbf18a2
           RELEASE_ID: ${{ github.sha }}
         run: |
-          cat > ssm-commands.json <<JSON
-          {
-            "commands": [
+          python3 - <<'PY'
+          import json
+          import os
+
+          release_id = os.environ["RELEASE_ID"]
+
+          commands = [
               "Import-Module AWSPowerShell",
               "Write-Output 'Deployment integration preflight only'",
-              "Write-Output ('Release ID: ${RELEASE_ID}')",
-              "Write-Output ('Computer: ' + \\$env:COMPUTERNAME)",
-              "if (-not (Test-Path 'C:\\\\inetpub\\\\wwwroot\\\\HD\\\\index.html')) { throw 'Live IIS entry file missing' }",
+              f"Write-Output 'Release ID: {release_id}'",
+              "Write-Output ('Computer: ' + $env:COMPUTERNAME)",
+              r"if (-not (Test-Path 'C:\inetpub\wwwroot\HD\index.html')) { throw 'Live IIS entry file missing' }",
               "if ((Get-PSDrive C).Free -lt 1GB) { throw 'Insufficient free disk space' }",
               "Write-Output 'Preflight passed. No live files changed.'"
-            ]
-          }
-          JSON
+          ]
+
+          with open("ssm-commands.json", "w", encoding="utf-8") as f:
+              json.dump({"commands": commands}, f)
+
+          print("SSM parameters JSON created successfully.")
+          PY
+
+          python3 -m json.tool ssm-commands.json
 
           COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunPowerShellScript" \
