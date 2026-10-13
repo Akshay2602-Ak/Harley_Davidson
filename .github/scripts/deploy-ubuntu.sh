@@ -13,7 +13,7 @@ BUCKET="dotnet-windows-s3"
 ARTIFACT_KEY="artifacts/${RELEASE_ID}.zip"
 IMAGE="harley-davidson:${RELEASE_ID}"
 CANDIDATE="harley-davidson-candidate-${RELEASE_ID:0:12}"
-PORT="127.0.0.1:8081"
+PORT="127.0.0.1:8082"
 WORK_DIR="$(sudo mktemp -d /var/tmp/harley-deploy.XXXXXX)"
 
 cleanup() {
@@ -127,7 +127,7 @@ sudo docker run -d \
 
 echo "Testing candidate HTTP response"
 for attempt in $(seq 1 15); do
-    if curl -fsS --max-time 3 http://127.0.0.1:8081/ \
+    if curl -fsS --max-time 3 http://127.0.0.1:8082/ \
         -o "${WORK_DIR}/candidate.html"; then
         break
     fi
@@ -146,7 +146,7 @@ grep -qi '<html' "${WORK_DIR}/candidate.html" || {
 
 for file in index.css app.js Icon_Harley-Davidson.jpeg harley-davidson-2.jpg; do
     code="$(curl -sS -o /dev/null -w '%{http_code}' \
-        --max-time 5 "http://127.0.0.1:8081/${file}")"
+        --max-time 5 "http://127.0.0.1:8082/${file}")"
     [[ "$code" == "200" ]] || {
         echo "ERROR: Candidate asset ${file} returned HTTP ${code}"
         exit 1
