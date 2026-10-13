@@ -1,0 +1,6 @@
+.git
+.github
+website.zip
+*.log
+.env
+.env.*
