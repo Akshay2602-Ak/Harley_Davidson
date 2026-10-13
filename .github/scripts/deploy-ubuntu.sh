@@ -1,4 +1,4 @@
-```bash
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -159,4 +159,3 @@ echo "Image: ${IMAGE}"
 echo "Candidate: ${CANDIDATE}"
 echo "Live Nginx upstream remains unchanged at 127.0.0.1:8080."
 echo "Promotion is intentionally not performed by this script."
-```
